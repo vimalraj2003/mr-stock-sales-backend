@@ -1,329 +1,266 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Major Rangas | Sales &amp; Stock Dashboard</title>
-<style>
-  :root {
-    --brand: #8b2e2e;
-    --brand-dark: #6b1f1f;
-    --bg: #f7f4ef;
-    --card: #ffffff;
-    --text: #2a2018;
-    --muted: #78706a;
-    --border: #e6ddd2;
-    --good: #2e7d32;
-    --warn: #b45309;
-    --bad: #c0392b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-  }
-  header {
-    background: var(--brand);
-    color: #fff;
-    padding: 18px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-  header h1 { margin: 0; font-size: 20px; font-weight: 700; }
-  header .sub { font-size: 12px; opacity: 0.85; }
-  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const XLSX = require('xlsx');
+const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 
-  .upload-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
-  .upload-card {
-    flex: 1; min-width: 260px;
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px;
-  }
-  .upload-card h3 { margin: 0 0 4px; font-size: 15px; }
-  .upload-card p { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
-  .upload-card input[type=file] { display:block; margin-bottom: 10px; font-size: 13px; width: 100%; }
-  .btn {
-    background: var(--brand); color: #fff; border: none; padding: 9px 16px;
-    border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600;
-  }
-  .btn:hover { background: var(--brand-dark); }
-  .btn:disabled { background: #ccc; cursor: not-allowed; }
-  .status-msg { font-size: 12px; margin-top: 8px; }
-  .status-msg.ok { color: var(--good); }
-  .status-msg.err { color: var(--bad); }
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-  .stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
-  .stat-card {
-    flex: 1; min-width: 160px;
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px;
-  }
-  .stat-card .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  .stat-card .value { font-size: 22px; font-weight: 700; color: var(--brand-dark); }
+const upload = multer({ storage: multer.memoryStorage() });
 
-  .panel {
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px; margin-bottom: 20px;
-  }
-  .panel h3 { margin: 0 0 12px; font-size: 15px; }
-  canvas { width: 100%; height: 220px; display: block; }
-
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
-  .badge-low { color: var(--bad); font-weight: 700; }
-  .badge-mid { color: var(--warn); font-weight: 700; }
-
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
-
-  .days-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
-  .days-toggle button {
-    background: #fff; border: 1px solid var(--border); padding: 5px 12px;
-    border-radius: 20px; font-size: 12px; cursor: pointer;
-  }
-  .days-toggle button.active { background: var(--brand); color: #fff; border-color: var(--brand); }
-
-  .refresh-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; color: var(--muted); }
-  .footer-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 10px; }
-</style>
-</head>
-<body>
-
-<header>
-  <div>
-    <h1>Major Rangas — Sales &amp; Stock Dashboard</h1>
-    <div class="sub">Upload sales report / stock, view summary</div>
-  </div>
-  <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
-</header>
-
-<main>
-
-  <div class="upload-row">
-    <div class="upload-card">
-      <h3>Upload Sales Report</h3>
-      <p>.xlsx with columns like Date, SKU, Product Name, Quantity, Amount</p>
-      <input type="file" id="salesFile" accept=".xlsx,.xls" />
-      <button class="btn" onclick="uploadFile('sales')">Upload Sales</button>
-      <div class="status-msg" id="salesStatus"></div>
-    </div>
-    <div class="upload-card">
-      <h3>Upload Stock</h3>
-      <p>.xlsx with columns like SKU, Product Name, Quantity (replaces current stock per SKU)</p>
-      <input type="file" id="stockFile" accept=".xlsx,.xls" />
-      <button class="btn" onclick="uploadFile('stock')">Upload Stock</button>
-      <div class="status-msg" id="stockStatus"></div>
-    </div>
-  </div>
-
-  <div class="days-toggle" id="daysToggle">
-    <button data-days="7">7d</button>
-    <button data-days="30" class="active">30d</button>
-    <button data-days="90">90d</button>
-    <button data-days="365">1y</button>
-  </div>
-
-  <div class="stats-row">
-    <div class="stat-card"><div class="label">Total Qty Sold</div><div class="value" id="statQty">-</div></div>
-    <div class="stat-card"><div class="label">Total Sales Amount</div><div class="value" id="statAmount">-</div></div>
-    <div class="stat-card"><div class="label">SKUs in Stock</div><div class="value" id="statSkuCount">-</div></div>
-    <div class="stat-card"><div class="label">Total Stock Qty</div><div class="value" id="statStockQty">-</div></div>
-  </div>
-
-  <div class="panel">
-    <h3>Daily Sales</h3>
-    <canvas id="salesChart"></canvas>
-  </div>
-
-  <div class="grid-2">
-    <div class="panel">
-      <h3>Top Products (by amount)</h3>
-      <table>
-        <thead><tr><th>Product</th><th>Qty</th><th>Amount</th></tr></thead>
-        <tbody id="topProductsBody"></tbody>
-      </table>
-    </div>
-    <div class="panel">
-      <h3>Low Stock Alerts (≤ 10)</h3>
-      <table>
-        <thead><tr><th>SKU</th><th>Product</th><th>Qty</th></tr></thead>
-        <tbody id="lowStockBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h3>Recent Uploads</h3>
-    <table>
-      <thead><tr><th>Type</th><th>File</th><th>Rows</th><th>When</th></tr></thead>
-      <tbody id="uploadsBody"></tbody>
-    </table>
-  </div>
-
-  <div class="footer-note">Major Rangas internal tool</div>
-</main>
-
-<script>
-// ---- CONFIG: set this to your Railway backend URL after deployment ----
-const BACKEND_URL = "https://mr-stock-sales-backend-production.up.railway.app";
-
-let currentDays = 30;
-
-document.getElementById('daysToggle').addEventListener('click', (e) => {
-  if (e.target.tagName !== 'BUTTON') return;
-  document.querySelectorAll('#daysToggle button').forEach(b => b.classList.remove('active'));
-  e.target.classList.add('active');
-  currentDays = parseInt(e.target.dataset.days, 10);
-  loadDashboard();
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('railway')
+    ? { rejectUnauthorized: false }
+    : false
 });
 
-async function uploadFile(type) {
-  const inputId = type === 'sales' ? 'salesFile' : 'stockFile';
-  const statusId = type === 'sales' ? 'salesStatus' : 'stockStatus';
-  const fileInput = document.getElementById(inputId);
-  const statusEl = document.getElementById(statusId);
-  if (!fileInput.files.length) {
-    statusEl.textContent = 'Choose a file first.';
-    statusEl.className = 'status-msg err';
-    return;
+// ---------- Init DB (runs schema.sql on boot) ----------
+async function initDb() {
+  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+  await pool.query(schema);
+  console.log('DB schema ready');
+}
+
+// ---------- Helpers ----------
+function normalizeHeader(h) {
+  return String(h || '').trim().toLowerCase();
+}
+
+function findKey(row, candidates) {
+  const keys = Object.keys(row);
+  for (const cand of candidates) {
+    const match = keys.find(k => normalizeHeader(k) === cand);
+    if (match) return match;
   }
-  const fd = new FormData();
-  fd.append('file', fileInput.files[0]);
-  statusEl.textContent = 'Uploading...';
-  statusEl.className = 'status-msg';
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/upload/${type}`, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Upload failed');
-    const count = data.inserted ?? data.upserted;
-    statusEl.textContent = `Done — ${count} rows processed.`;
-    statusEl.className = 'status-msg ok';
-    fileInput.value = '';
-    loadDashboard();
-  } catch (err) {
-    statusEl.textContent = 'Error: ' + err.message;
-    statusEl.className = 'status-msg err';
+  // fallback: partial match
+  for (const cand of candidates) {
+    const match = keys.find(k => normalizeHeader(k).includes(cand));
+    if (match) return match;
   }
+  return null;
 }
 
-function fmtMoney(n) {
-  return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-}
-function fmtNum(n) {
-  return Number(n || 0).toLocaleString('en-IN');
+function parseExcelBuffer(buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+  const sheetName = wb.SheetNames[0];
+  const sheet = wb.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json(sheet, { defval: '' });
 }
 
-async function loadDashboard() {
+function toDateString(val) {
+  if (!val) return null;
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
+function toNumber(val) {
+  if (typeof val === 'number') return val;
+  const n = parseFloat(String(val).replace(/[^0-9.\-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+// ---------- Upload: Sales Report ----------
+app.post('/api/upload/sales', upload.single('file'), async (req, res) => {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/dashboard?days=${currentDays}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load dashboard');
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const rows = parseExcelBuffer(req.file.buffer);
+    if (!rows.length) return res.status(400).json({ error: 'File has no data rows' });
 
-    document.getElementById('statQty').textContent = fmtNum(data.totals.total_qty);
-    document.getElementById('statAmount').textContent = fmtMoney(data.totals.total_amount);
-    document.getElementById('statSkuCount').textContent = fmtNum(data.stockSummary.sku_count);
-    document.getElementById('statStockQty').textContent = fmtNum(data.stockSummary.total_stock);
+    const dateKey = findKey(rows[0], ['date', 'sale date', 'saledate', 'order date']);
+    const skuKey = findKey(rows[0], ['sku', 'sku code', 'product code', 'item code']);
+    const nameKey = findKey(rows[0], ['product name', 'product', 'item name', 'name']);
+    const qtyKey = findKey(rows[0], ['quantity', 'qty', 'quantity sold', 'units sold', 'units']);
+    const amtKey = findKey(rows[0], ['amount', 'sales amount', 'total amount', 'revenue', 'value', 'total']);
 
-    drawChart(data.byDay);
+    const batch = `sales_${Date.now()}`;
+    const client = await pool.connect();
+    let inserted = 0;
+    try {
+      await client.query('BEGIN');
+      for (const row of rows) {
+        const sale_date = dateKey ? toDateString(row[dateKey]) : null;
+        const sku = skuKey ? String(row[skuKey]).trim() : null;
+        const product_name = nameKey ? String(row[nameKey]).trim() : null;
+        const quantity = qtyKey ? toNumber(row[qtyKey]) : 0;
+        const amount = amtKey ? toNumber(row[amtKey]) : 0;
+        if (!sku && !product_name) continue; // skip empty rows
+        await client.query(
+          `INSERT INTO sales (sale_date, sku, product_name, quantity, amount, upload_batch)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [sale_date, sku, product_name, quantity, amount, batch]
+        );
+        inserted++;
+      }
+      await client.query(
+        `INSERT INTO uploads_log (upload_type, file_name, row_count) VALUES ('sales', $1, $2)`,
+        [req.file.originalname, inserted]
+      );
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
 
-    const topBody = document.getElementById('topProductsBody');
-    topBody.innerHTML = data.topProducts.map(p =>
-      `<tr><td>${p.name || '-'}</td><td>${fmtNum(p.qty)}</td><td>${fmtMoney(p.amount)}</td></tr>`
-    ).join('') || '<tr><td colspan="3">No data</td></tr>';
-
-    const lowBody = document.getElementById('lowStockBody');
-    lowBody.innerHTML = data.lowStock.map(s => {
-      const cls = s.quantity <= 5 ? 'badge-low' : 'badge-mid';
-      return `<tr><td>${s.sku}</td><td>${s.product_name || '-'}</td><td class="${cls}">${fmtNum(s.quantity)}</td></tr>`;
-    }).join('') || '<tr><td colspan="3">No low stock items</td></tr>';
-
-    const upBody = document.getElementById('uploadsBody');
-    upBody.innerHTML = data.lastUploads.map(u =>
-      `<tr><td>${u.upload_type}</td><td>${u.file_name}</td><td>${u.row_count}</td><td>${new Date(u.uploaded_at).toLocaleString('en-IN')}</td></tr>`
-    ).join('') || '<tr><td colspan="4">No uploads yet</td></tr>';
-
+    res.json({
+      success: true,
+      inserted,
+      detectedColumns: { dateKey, skuKey, nameKey, qtyKey, amtKey }
+    });
   } catch (err) {
     console.error(err);
-    alert('Could not load dashboard: ' + err.message + '\n\nCheck that BACKEND_URL is set correctly in index.html.');
+    res.status(500).json({ error: err.message });
   }
-}
+});
 
-function drawChart(byDay) {
-  const canvas = document.getElementById('salesChart');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = 220 * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  const W = rect.width, H = 220;
-  ctx.clearRect(0, 0, W, H);
+// ---------- Upload: Stock ----------
+app.post('/api/upload/stock', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const rows = parseExcelBuffer(req.file.buffer);
+    if (!rows.length) return res.status(400).json({ error: 'File has no data rows' });
 
-  if (!byDay || !byDay.length) {
-    ctx.fillStyle = '#78706a';
-    ctx.font = '13px sans-serif';
-    ctx.fillText('No sales data for this period', 10, H / 2);
-    return;
+    const skuKey = findKey(rows[0], ['sku', 'sku code', 'product code', 'item code']);
+    const nameKey = findKey(rows[0], ['product name', 'product', 'item name', 'name']);
+    const qtyKey = findKey(rows[0], ['quantity', 'qty', 'stock qty', 'stock quantity', 'current stock', 'stock', 'available qty']);
+
+    if (!skuKey) return res.status(400).json({ error: 'Could not find an SKU column in the file' });
+
+    const client = await pool.connect();
+    let upserted = 0;
+    try {
+      await client.query('BEGIN');
+      for (const row of rows) {
+        const sku = String(row[skuKey]).trim();
+        if (!sku) continue;
+        const product_name = nameKey ? String(row[nameKey]).trim() : null;
+        const quantity = qtyKey ? toNumber(row[qtyKey]) : 0;
+        await client.query(
+          `INSERT INTO stock (sku, product_name, quantity, updated_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (sku) DO UPDATE SET
+             product_name = COALESCE(EXCLUDED.product_name, stock.product_name),
+             quantity = EXCLUDED.quantity,
+             updated_at = NOW()`,
+          [sku, product_name, quantity]
+        );
+        upserted++;
+      }
+      await client.query(
+        `INSERT INTO uploads_log (upload_type, file_name, row_count) VALUES ('stock', $1, $2)`,
+        [req.file.originalname, upserted]
+      );
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    res.json({ success: true, upserted, detectedColumns: { skuKey, nameKey, qtyKey } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
+});
 
-  const pad = { l: 50, r: 15, t: 10, b: 30 };
-  const chartW = W - pad.l - pad.r;
-  const chartH = H - pad.t - pad.b;
-  const maxAmount = Math.max(...byDay.map(d => Number(d.amount) || 0), 1);
+// ---------- Dashboard summary ----------
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days || '30', 10);
 
-  // axes
-  ctx.strokeStyle = '#e6ddd2';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.t + chartH - (chartH * i / 4);
-    ctx.beginPath();
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(W - pad.r, y);
-    ctx.stroke();
-    ctx.fillStyle = '#78706a';
-    ctx.font = '10px sans-serif';
-    ctx.fillText(fmtMoney(maxAmount * i / 4), 2, y + 3);
+    const totals = await pool.query(
+      `SELECT COALESCE(SUM(quantity),0) AS total_qty, COALESCE(SUM(amount),0) AS total_amount, COUNT(*) AS total_rows
+       FROM sales WHERE sale_date >= (CURRENT_DATE - $1::int)`,
+      [days]
+    );
+
+    const byDay = await pool.query(
+      `SELECT sale_date, SUM(quantity) AS qty, SUM(amount) AS amount
+       FROM sales
+       WHERE sale_date >= (CURRENT_DATE - $1::int) AND sale_date IS NOT NULL
+       GROUP BY sale_date ORDER BY sale_date ASC`,
+      [days]
+    );
+
+    const topProducts = await pool.query(
+      `SELECT COALESCE(product_name, sku) AS name, SUM(quantity) AS qty, SUM(amount) AS amount
+       FROM sales
+       WHERE sale_date >= (CURRENT_DATE - $1::int)
+       GROUP BY COALESCE(product_name, sku)
+       ORDER BY amount DESC LIMIT 10`,
+      [days]
+    );
+
+    const stockSummary = await pool.query(
+      `SELECT COUNT(*) AS sku_count, COALESCE(SUM(quantity),0) AS total_stock
+       FROM stock`
+    );
+
+    const lowStock = await pool.query(
+      `SELECT sku, product_name, quantity FROM stock
+       WHERE quantity <= 10 ORDER BY quantity ASC LIMIT 20`
+    );
+
+    const lastUploads = await pool.query(
+      `SELECT upload_type, file_name, row_count, uploaded_at FROM uploads_log
+       ORDER BY uploaded_at DESC LIMIT 5`
+    );
+
+    res.json({
+      totals: totals.rows[0],
+      byDay: byDay.rows,
+      topProducts: topProducts.rows,
+      stockSummary: stockSummary.rows[0],
+      lowStock: lowStock.rows,
+      lastUploads: lastUploads.rows
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
+});
 
-  // line
-  ctx.strokeStyle = '#8b2e2e';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  byDay.forEach((d, i) => {
-    const x = pad.l + (chartW * i / Math.max(byDay.length - 1, 1));
-    const y = pad.t + chartH - (chartH * (Number(d.amount) || 0) / maxAmount);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+// ---------- Raw listing (optional, for drill-down) ----------
+app.get('/api/sales', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '200', 10), 1000);
+    const result = await pool.query(
+      `SELECT * FROM sales ORDER BY sale_date DESC NULLS LAST, id DESC LIMIT $1`, [limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/stock', async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT * FROM stock ORDER BY quantity ASC`);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+const PORT = process.env.PORT || 3000;
+initDb()
+  .then(() => {
+    app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+  })
+  .catch(err => {
+    console.error('Failed to init DB', err);
+    process.exit(1);
   });
-  ctx.stroke();
-
-  // points + x labels (sparse)
-  ctx.fillStyle = '#8b2e2e';
-  byDay.forEach((d, i) => {
-    const x = pad.l + (chartW * i / Math.max(byDay.length - 1, 1));
-    const y = pad.t + chartH - (chartH * (Number(d.amount) || 0) / maxAmount);
-    ctx.beginPath();
-    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  const labelStep = Math.ceil(byDay.length / 6);
-  ctx.fillStyle = '#78706a';
-  ctx.font = '10px sans-serif';
-  byDay.forEach((d, i) => {
-    if (i % labelStep !== 0) return;
-    const x = pad.l + (chartW * i / Math.max(byDay.length - 1, 1));
-    const label = String(d.sale_date).slice(5); // MM-DD
-    ctx.fillText(label, x - 12, H - 8);
-  });
-}
-
-loadDashboard();
-</script>
-
-</body>
-</html>
