@@ -53,6 +53,12 @@
   }
   .btn:hover { background: var(--brand-dark); }
   .btn:disabled { background: #ccc; cursor: not-allowed; }
+  .btn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .btn-link {
+    background: none; border: none; color: var(--brand); font-size: 12px;
+    cursor: pointer; padding: 4px 0; text-decoration: underline;
+  }
+  .btn-link:hover { color: var(--brand-dark); }
   .status-msg { font-size: 12px; margin-top: 8px; }
   .status-msg.ok { color: var(--good); }
   .status-msg.err { color: var(--bad); }
@@ -110,14 +116,20 @@
       <h3>Upload Sales Report</h3>
       <p>.xlsx with columns like Date, SKU, Product Name, Quantity, Amount</p>
       <input type="file" id="salesFile" accept=".xlsx,.xls" />
-      <button class="btn" onclick="uploadFile('sales')">Upload Sales</button>
+      <div class="btn-row">
+        <button class="btn" onclick="uploadFile('sales')">Upload Sales</button>
+        <button class="btn-link" onclick="downloadTemplate('sales')">↓ Sample template</button>
+      </div>
       <div class="status-msg" id="salesStatus"></div>
     </div>
     <div class="upload-card">
       <h3>Upload Stock</h3>
       <p>.xlsx with columns like SKU, Product Name, Quantity (replaces current stock per SKU)</p>
       <input type="file" id="stockFile" accept=".xlsx,.xls" />
-      <button class="btn" onclick="uploadFile('stock')">Upload Stock</button>
+      <div class="btn-row">
+        <button class="btn" onclick="uploadFile('stock')">Upload Stock</button>
+        <button class="btn-link" onclick="downloadTemplate('stock')">↓ Sample template</button>
+      </div>
       <div class="status-msg" id="stockStatus"></div>
     </div>
   </div>
@@ -169,9 +181,40 @@
   <div class="footer-note">Major Rangas internal tool</div>
 </main>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+function downloadTemplate(type) {
+  let wsData, filename, sheetName;
+  if (type === 'sales') {
+    sheetName = 'Sales Report';
+    filename = 'sample_sales_report.xlsx';
+    wsData = [
+      ['Date', 'SKU', 'Product Name', 'Quantity', 'Amount'],
+      ['02-Jul-2026', 'MR-MIX-250', 'Mixture 250g', 12, 1440],
+      ['02-Jul-2026', 'MR-MURK-200', 'Murukku 200g', 8, 960],
+      ['03-Jul-2026', 'MR-SEV-250', 'Sev 250g', 15, 1650],
+      ['03-Jul-2026', 'MR-LADD-500', 'Laddu 500g (Combo)', 5, 1750],
+    ];
+  } else {
+    sheetName = 'Stock';
+    filename = 'sample_stock.xlsx';
+    wsData = [
+      ['SKU', 'Product Name', 'Quantity'],
+      ['MR-MIX-250', 'Mixture 250g', 85],
+      ['MR-MURK-200', 'Murukku 200g', 42],
+      ['MR-SEV-250', 'Sev 250g', 60],
+      ['MR-LADD-500', 'Laddu 500g (Combo)', 8],
+    ];
+  }
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = wsData[0].map((_, i) => ({ wch: i === 2 ? 24 : 14 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, filename);
+}
+
 // ---- CONFIG: set this to your Railway backend URL after deployment ----
-const BACKEND_URL = "postgresql://postgres:TAdJTKxzAbYPLhhGXVPjgHMFryMztkbp@postgres.railway.internal:5432/railway";
+const BACKEND_URL = "postgres-production-52b0.up.railway.app";
 
 let currentDays = 30;
 
